@@ -1,0 +1,7 @@
+pybind11
+numpy
+numba
+cupy-cuda12x
+pycuda
+pytest
+pytest-repeat
