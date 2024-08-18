@@ -13,8 +13,6 @@
 #include <thread>    // `std::thread::hardware_concurrency()`
 #include <vector>    // `std::vector`
 
-#include <omp.h> // `omp_set_num_threads`
-
 /*
  *  Include the SIMD intrinsics for the target architecture.
  *  Arm: https://developer.arm.com/architectures/instruction-sets/intrinsics
@@ -326,7 +324,6 @@ static py::object python_reduce_typed(py::buffer_info const& buf) noexcept(false
 
     if constexpr (backend_kind == backend_t::openmp_k) {
         // Explicitly enable dynamic teams, as the amount of compute per thread is not uniform.
-        omp_set_dynamic(1);
         result = openmp_reduce<scalar_type>(ptr, buf.size);
     } else if constexpr (backend_kind == backend_t::cuda_k) {
 #if defined(__NVCC__)
@@ -403,8 +400,6 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
 
     if constexpr (backend_kind == backend_t::openmp_k) {
         // Explicitly disable dynamic teams, as the amount of compute per thread is uniform.
-        omp_set_dynamic(0);
-        omp_set_num_threads(std::thread::hardware_concurrency());
         kernel_t kernel = nullptr;
         switch (tile_size) {
         case 4: kernel = &openmp_matmul<scalar_type, 4>;

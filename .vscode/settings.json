@@ -57,12 +57,15 @@
         "thread": "cpp"
     },
     "cSpell.words": [
+        "allclose",
+        "astype",
         "CCCL",
         "CUDA",
         "cupy",
         "dtype",
         "ndarray",
         "njit",
-        "numba"
+        "numba",
+        "openmp"
     ]
 }
