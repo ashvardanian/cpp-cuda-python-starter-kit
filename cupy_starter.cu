@@ -89,6 +89,11 @@ using reduce_type = std::conditional_t< //
     std::is_floating_point_v<scalar_type>, double,
     std::conditional_t<std::is_signed_v<scalar_type>, std::int64_t, std::uint64_t>>;
 
+template <typename scalar_type>
+using matmul_type = std::conditional_t<                 //
+    std::is_floating_point_v<scalar_type>, scalar_type, //
+    std::conditional_t<std::is_signed_v<scalar_type>, std::int64_t, std::uint64_t>>;
+
 /**
  *  @brief Performs a reduction operation on a 1D array using OpenMP for parallelization.
  *
@@ -144,10 +149,10 @@ reduce_type<scalar_type> openmp_reduce(scalar_type const* data, std::size_t leng
  *  tile-sized chunks, which are copied into stack-allocated arrays to improve cache efficiency.
  *  The workload is parallelized using OpenMP to distribute the computation across multiple threads.
  */
-template <typename scalar_type, cell_idx_t tile_size = 16>                           //
-void openmp_matmul(                                                                  //
-    scalar_type const* matrix_a, scalar_type const* matrix_b, scalar_type* matrix_c, //
-    cell_idx_t num_rows_a, cell_idx_t num_cols_b, cell_idx_t num_cols_a,             //
+template <typename scalar_type, cell_idx_t tile_size = 16>                                        //
+void openmp_matmul(                                                                               //
+    scalar_type const* matrix_a, scalar_type const* matrix_b, matmul_type<scalar_type>* matrix_c, //
+    cell_idx_t num_rows_a, cell_idx_t num_cols_b, cell_idx_t num_cols_a,                          //
     cell_idx_t stride_a, cell_idx_t stride_b, cell_idx_t stride_c) noexcept {
 
 #pragma omp parallel for collapse(2)
@@ -155,10 +160,10 @@ void openmp_matmul(                                                             
         for (cell_idx_t j = 0; j < num_cols_b; j += tile_size) {
             scalar_type local_tile_a[tile_size][tile_size];
             scalar_type local_tile_b[tile_size][tile_size];
-            scalar_type local_tile_c[tile_size][tile_size];
+            matmul_type<scalar_type> local_tile_c[tile_size][tile_size];
 
             // Initialize the local tile to zero
-            std::memset(local_tile_c, 0, tile_size * tile_size * sizeof(scalar_type));
+            std::memset(local_tile_c, 0, tile_size * tile_size * sizeof(matmul_type<scalar_type>));
 
             for (cell_idx_t k = 0; k < num_cols_a; k += tile_size) {
                 // Load tiles into local memory
@@ -187,7 +192,7 @@ void openmp_matmul(                                                             
             for (cell_idx_t ii = 0; ii < tile_size; ++ii)
                 for (cell_idx_t jj = 0; jj < tile_size; ++jj)
                     if (i + ii < num_rows_a && j + jj < num_cols_b)
-                        matrix_c[(i + ii) * stride_c + (j + jj)] += local_tile_c[ii][jj];
+                        matrix_c[(i + ii) * stride_c + (j + jj)] = local_tile_c[ii][jj];
         }
     }
 }
@@ -256,22 +261,22 @@ reduce_type<scalar_type> cuda_reduce(scalar_type const* data, std::size_t length
  *  tiles of matrices A and B. The kernel ensures correct handling of matrix boundaries and
  *  supports strided matrices, where elements of a row are not necessarily contiguous in memory.
  */
-template <typename scalar_type, cell_idx_t tile_size = 16>                           //
-void cuda_matmul_kernel(                                                             //
-    scalar_type const* matrix_a, scalar_type const* matrix_b, scalar_type* matrix_c, //
-    cell_idx_t num_rows_a, cell_idx_t num_cols_b, cell_idx_t num_cols_a,             //
+template <typename scalar_type, cell_idx_t tile_size = 16>                                        //
+__device__ void cuda_matmul_kernel(                                                               //
+    scalar_type const* matrix_a, scalar_type const* matrix_b, matmul_type<scalar_type>* matrix_c, //
+    cell_idx_t num_rows_a, cell_idx_t num_cols_b, cell_idx_t num_cols_a,                          //
     cell_idx_t stride_a, cell_idx_t stride_b, cell_idx_t stride_c) noexcept {
 
     // Allocate shared memory for matrix_a and matrix_b tiles
-    __shared__ scalar_type tile_a[tile_size][tile_size];
-    __shared__ scalar_type tile_b[tile_size][tile_size];
+    __shared__ matmul_type<scalar_type> tile_a[tile_size][tile_size];
+    __shared__ matmul_type<scalar_type> tile_b[tile_size][tile_size];
 
     // Calculate the row and column index for this thread in the output matrix matrix_c
     cell_idx_t row = blockIdx.y * tile_size + threadIdx.y;
     cell_idx_t col = blockIdx.x * tile_size + threadIdx.x;
 
     // Accumulate the result for matrix_c[row][col]
-    scalar_type cell_c = 0;
+    matmul_type<scalar_type> cell_c = 0;
 
     // Loop over tiles of matrix_a and matrix_b that are multiplied together
     for (cell_idx_t t = 0; t < (num_cols_a + tile_size - 1) / tile_size; ++t) {
@@ -389,37 +394,37 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
     auto stride_b = static_cast<cell_idx_t>(buffer_b.strides[0] / sizeof(scalar_type));
 
     // Allocate NumPy array for the result
-    auto tensor_c = py::array_t<scalar_type>({num_rows_a, num_cols_b});
+    auto tensor_c = py::array_t<matmul_type<scalar_type>>({num_rows_a, num_cols_b});
     auto buffer_c = tensor_c.request();
-    auto ptr_c = reinterpret_cast<scalar_type*>(buffer_c.ptr);
-    auto stride_c = static_cast<cell_idx_t>(buffer_c.strides[0] / sizeof(scalar_type));
+    auto ptr_c = reinterpret_cast<matmul_type<scalar_type>*>(buffer_c.ptr);
+    auto stride_c = static_cast<cell_idx_t>(buffer_c.strides[0] / sizeof(matmul_type<scalar_type>));
 
     // Call the appropriate kernel based on the backend
-    using kernel_t = void (*)(scalar_type const*, scalar_type const*, scalar_type*, cell_idx_t, cell_idx_t, cell_idx_t,
-                              cell_idx_t, cell_idx_t, cell_idx_t);
+    using kernel_t = void (*)(scalar_type const*, scalar_type const*, matmul_type<scalar_type>*, cell_idx_t, cell_idx_t,
+                              cell_idx_t, cell_idx_t, cell_idx_t, cell_idx_t);
 
     if constexpr (backend_kind == backend_t::openmp_k) {
         // Explicitly disable dynamic teams, as the amount of compute per thread is uniform.
         kernel_t kernel = nullptr;
         switch (tile_size) {
-        case 4: kernel = &openmp_matmul<scalar_type, 4>;
-        case 8: kernel = &openmp_matmul<scalar_type, 8>;
-        case 16: kernel = &openmp_matmul<scalar_type, 16>;
-        case 32: kernel = &openmp_matmul<scalar_type, 32>;
-        case 64: kernel = &openmp_matmul<scalar_type, 64>;
-        case 128: kernel = &openmp_matmul<scalar_type, 128>;
+        case 4: kernel = &openmp_matmul<scalar_type, 4>; break;
+        case 8: kernel = &openmp_matmul<scalar_type, 8>; break;
+        case 16: kernel = &openmp_matmul<scalar_type, 16>; break;
+        case 32: kernel = &openmp_matmul<scalar_type, 32>; break;
+        case 64: kernel = &openmp_matmul<scalar_type, 64>; break;
+        case 128: kernel = &openmp_matmul<scalar_type, 128>; break;
         default: throw std::runtime_error("Unsupported tile size");
         }
         kernel(ptr_a, ptr_b, ptr_c, num_rows_a, num_cols_b, num_cols_a, stride_a, stride_b, stride_c);
 
     } else if constexpr (backend_kind == backend_t::cuda_k) {
 #if defined(__NVCC__)
-        votes_count_t* ptr_c_cuda = nullptr;
+        matmul_type<scalar_type>* ptr_c_cuda = nullptr;
         cudaError_t error;
-        error = cudaMallocManaged(&ptr_c_cuda, num_rows_a * num_cols_b * sizeof(scalar_type));
+        error = cudaMallocManaged(&ptr_c_cuda, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>));
         if (error != cudaSuccess)
             throw std::runtime_error("Failed to allocate memory on device");
-        cudaMemset(ptr_c_cuda, 0, num_rows_a * num_cols_b * sizeof(scalar_type));
+        cudaMemset(ptr_c_cuda, 0, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>));
 
         // Synchronize to ensure all CUDA operations are complete
         error = cudaDeviceSynchronize();
@@ -428,11 +433,22 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
             throw std::runtime_error("CUDA operations did not complete successfully");
         }
 
-        // Launch the CUDA kernel
         dim3 block_size(tile_size, tile_size);
         dim3 grid_size((num_cols_b + tile_size - 1) / tile_size, (num_rows_a + tile_size - 1) / tile_size);
-        cuda_matmul_kernel<scalar_type, tile_size><<<grid_size, block_size>>>(
-            ptr_a, ptr_b, ptr_c_cuda, num_rows_a, num_cols_b, num_cols_a, stride_a, stride_b, stride_c);
+
+        // Launch the CUDA kernel
+        kernel_t kernel = nullptr;
+        switch (tile_size) {
+        case 4: kernel = &cuda_matmul_kernel<scalar_type, 4>; break;
+        case 8: kernel = &cuda_matmul_kernel<scalar_type, 8>; break;
+        case 16: kernel = &cuda_matmul_kernel<scalar_type, 16>; break;
+        case 32: kernel = &cuda_matmul_kernel<scalar_type, 32>; break;
+        case 64: kernel = &cuda_matmul_kernel<scalar_type, 64>; break;
+        case 128: kernel = &cuda_matmul_kernel<scalar_type, 128>; break;
+        default: throw std::runtime_error("Unsupported tile size");
+        }
+        kernel<<<grid_size, block_size>>>(ptr_a, ptr_b, ptr_c_cuda, num_rows_a, num_cols_b, num_cols_a, stride_a,
+                                          stride_b, stride_c);
 
         // Synchronize to ensure all CUDA operations are complete
         error = cudaDeviceSynchronize();
@@ -442,7 +458,7 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
         }
 
         // Copy data from the GPU to the NumPy array
-        error = cudaMemcpy(ptr_c, ptr_c_cuda, num_candidates * num_candidates * sizeof(votes_count_t),
+        error = cudaMemcpy(ptr_c, ptr_c_cuda, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>),
                            cudaMemcpyDeviceToHost);
         if (error != cudaSuccess) {
             cudaFree(ptr_c_cuda);

@@ -51,7 +51,7 @@ class BuildExt(build_ext):
 
         # Link all object files
         self.compiler.link_shared_object(
-            objects + [os.path.join(self.build_temp, "scaling_democracy.o")],
+            objects + [os.path.join(self.build_temp, "cupy_starter.o")],
             self.get_ext_fullpath(ext.name),
             libraries=ext.libraries,
             library_dirs=ext.library_dirs,

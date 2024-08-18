@@ -28,7 +28,7 @@ Once pulled down, you can build the project with:
 git submodule update --init --recursive     # fetch CCCL libraries
 pip install -r requirements-gpu.txt         # or requirements-cpu.txt
 pip install -e .                            # compile for the current platform
-pytest test.py
+pytest test.py -s -x                        # test until first failure
 python benchmark.py --num-candidates 128 --num-voters 128 --run-openmp --run-numba --run-serial --run-cuda
 ```
 
