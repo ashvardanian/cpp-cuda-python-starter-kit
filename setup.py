@@ -1,4 +1,5 @@
 import os
+import platform
 from setuptools import setup
 from setuptools.extension import Extension
 from setuptools.command.build_ext import build_ext
@@ -7,23 +8,25 @@ from distutils.sysconfig import get_python_inc, get_python_lib
 import pybind11
 import numpy as np
 
+is_macos = platform.system() == "Darwin"
+is_linux = platform.system() == "Linux"
+is_nvcc_available = os.system("which nvcc > /dev/null 2>&1") == 0
+enable_openmp = not is_macos
+enable_cuda = is_linux and is_nvcc_available
+
 
 class BuildExt(build_ext):
     def build_extensions(self):
         self.compiler.src_extensions.append(".cu")
-        nvcc_available = self.is_nvcc_available()
 
         for ext in self.extensions:
             if any(source.endswith(".cu") for source in ext.sources):
-                if nvcc_available:
+                if is_nvcc_available:
                     self.build_cuda_extension(ext)
                 else:
                     self.build_gcc_extension(ext)
             else:
                 super().build_extension(ext)
-
-    def is_nvcc_available(self):
-        return os.system("which nvcc > /dev/null 2>&1") == 0
 
     def build_cuda_extension(self, ext):
         # Compile CUDA source files
@@ -36,7 +39,13 @@ class BuildExt(build_ext):
         for source in ext.sources:
             if not source.endswith(".cu"):
                 obj = self.compiler.compile(
-                    [source], output_dir=self.build_temp, extra_postargs=["-fPIC"]
+                    [source],
+                    output_dir=self.build_temp,
+                    extra_postargs=[
+                        "-fPIC",
+                        "-std=c++17",
+                        "-fdiagnostics-color=always",
+                    ],
                 )
                 objects.extend(obj)
 
@@ -52,7 +61,7 @@ class BuildExt(build_ext):
         )
 
     def build_gcc_extension(self, ext):
-        # Compile all source files with GCC, including treating .cu files as .cpp files
+        # Check if compiling on macOS
         objects = []
         for source in ext.sources:
             if source.endswith(".cu"):
@@ -60,14 +69,24 @@ class BuildExt(build_ext):
                     [source],
                     output_dir=self.build_temp,
                     extra_preargs=["-x", "c++"],
-                    extra_postargs=["-fPIC", "-fopenmp"],
+                    extra_postargs=[
+                        "-fPIC",
+                        "-std=c++17",
+                        "-fdiagnostics-color=always",
+                    ]
+                    + (["-fopenmp"] if enable_openmp else []),
                     include_dirs=ext.include_dirs,
                 )
             else:
                 obj = self.compiler.compile(
                     [source],
                     output_dir=self.build_temp,
-                    extra_postargs=["-fPIC", "-fopenmp"],
+                    extra_postargs=[
+                        "-fPIC",
+                        "-std=c++17",
+                        "-fdiagnostics-color=always",
+                    ]
+                    + (["-fopenmp"] if enable_openmp else []),
                     include_dirs=ext.include_dirs,
                 )
             objects.extend(obj)
@@ -93,12 +112,6 @@ class BuildExt(build_ext):
         output_file = os.path.join(output_dir, "cupy_starter.o")
 
         # Let's try inferring the compute capability from the GPU
-        # Kepler: -arch=sm_30
-        # Turing: -arch=sm_75
-        # Ampere: -arch=sm_86
-        # Ada: -arch=sm_89
-        # Hopper: -arch=sm_90
-        # https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
         arch_code = "90"
         try:
             import pycuda.driver as cuda
@@ -110,7 +123,11 @@ class BuildExt(build_ext):
         except ImportError:
             pass
 
-        cmd = f"nvcc -c {source} -o {output_file} -std=c++17 -gencode=arch=compute_{arch_code},code=compute_{arch_code} -Xcompiler -fPIC {include_dirs} -O3 -g"
+        cmd = (
+            f"nvcc -c {source} -o {output_file} -std=c++17 "
+            f"-gencode=arch=compute_{arch_code},code=compute_{arch_code} "
+            f"-Xcompiler -fPIC {include_dirs} -O3 -g"
+        )
         if os.system(cmd) != 0:
             raise RuntimeError(f"nvcc compilation of {source} failed")
 
@@ -129,7 +146,7 @@ python_lib_name = os.path.basename(python_lib_dir).replace(".so", "")
 ext_modules = [
     Extension(
         "cupy_starter",
-        ["cupy_starter_kernels.cu"],
+        ["cupy_starter.cu"],
         include_dirs=[
             pybind11.get_include(),
             np.get_include(),
@@ -146,17 +163,13 @@ ext_modules = [
             "/usr/lib/wsl/lib",
             python_lib_dir,
         ],
-        libraries=[
-            "cudart",
-            "cuda",
-            "cublas",
-            "gomp",  # OpenMP
-            python_lib_name.replace(".a", ""),
-        ],
-        extra_link_args=[
-            f"-Wl,-rpath,{python_lib_dir}",
-            "-fopenmp",
-        ],
+        #
+        libraries=[python_lib_name.replace(".a", "")]
+        + (["cudart", "cuda", "cublas"] if enable_cuda else [])
+        + (["gomp"] if enable_openmp else []),
+        #
+        extra_link_args=[f"-Wl,-rpath,{python_lib_dir}"]
+        + (["-fopenmp"] if enable_openmp else []),
         language="c++",
     ),
 ]

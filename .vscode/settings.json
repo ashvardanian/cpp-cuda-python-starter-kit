@@ -52,7 +52,9 @@
         "type_traits": "cpp",
         "bitset": "cpp",
         "complex": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "__locale": "cpp",
+        "thread": "cpp"
     },
     "cSpell.words": [
         "CCCL",

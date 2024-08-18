@@ -4,3 +4,8 @@
 *.ptx
 *.cubin
 *.fatbin
+*.egg-info
+*.so
+*.a
+*.dylib
+*.o
