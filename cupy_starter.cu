@@ -100,18 +100,19 @@ using reduce_type = std::conditional_t< //
  *
  *  @tparam scalar_type The data type of the array elements (e.g., float, double).
  *
- *  @param data A `std::span<scalar_type>` representing the input array. The array must be
- *  contiguous and 1-dimensional.
+ *  @param data A pointer to the input array of elements of type `scalar_type`.
+ *  @param length The number of elements in the input array.
  *
  *  @return reduce_type<scalar_type> The result of the reduction operation, which is the sum
  *  of all elements in the array.
  */
-template <typename scalar_type> reduce_type<scalar_type> openmp_reduce(std::span<scalar_type> data) noexcept {
+template <typename scalar_type>
+reduce_type<scalar_type> openmp_reduce(scalar_type const* data, std::size_t length) noexcept {
     reduce_type<scalar_type> initial_value = 0;
 #pragma omp parallel for reduction(+ : initial_value)
-    for (cell_idx_t i = 0; i < data.size(); i++)
+    for (cell_idx_t i = 0; i < length; i++)
         initial_value += data[i];
-    // Should be same as `std::accumulate(data.data(), data.data() + data.size(), initial_value)`
+    // Should be same as `std::accumulate(data.data(), data.data() + length, initial_value)`
     return initial_value;
 }
 
@@ -156,7 +157,10 @@ void openmp_matmul(                                                             
         for (cell_idx_t j = 0; j < num_cols_b; j += tile_size) {
             scalar_type local_tile_a[tile_size][tile_size];
             scalar_type local_tile_b[tile_size][tile_size];
-            scalar_type local_tile_c[tile_size][tile_size] = {0};
+            scalar_type local_tile_c[tile_size][tile_size];
+
+            // Initialize the local tile to zero
+            std::memset(local_tile_c, 0, tile_size * tile_size * sizeof(scalar_type));
 
             for (cell_idx_t k = 0; k < num_cols_a; k += tile_size) {
                 // Load tiles into local memory
@@ -209,23 +213,16 @@ using barrier_t = cuda::barrier<cuda::thread_scope_block>;
  *
  *  @tparam scalar_type The data type of the array elements (e.g., float, double).
  *
- *  @param data A `std::span<scalar_type>` representing the input array. The array
- *  must be contiguous and 1-dimensional, with a stride matching the size of
- *  `scalar_type`.
+ *  @param data A pointer to the input array of elements of type `scalar_type`.
+ *  @param length The number of elements in the input array.
  *
  *  @return reduce_type<scalar_type> The result of the reduction operation. For
  *  floating-point types, this is typically the sum of all elements in the array.
- *
- *  @throws std::runtime_error If the input array is not contiguous, not 1-dimensional,
- *  or if the stride does not match the size of `scalar_type`.
  */
-template <typename scalar_type> reduce_type<scalar_type> cuda_reduce(std::span<scalar_type> data) noexcept(false) {
+template <typename scalar_type>
+reduce_type<scalar_type> cuda_reduce(scalar_type const* data, std::size_t length) noexcept(false) {
     reduce_type<scalar_type> initial_value = 0;
-    py::buffer_info buf = data.request();
-    if (buf.ndim != 1 || buf.strides[0] != sizeof(scalar_type))
-        throw std::runtime_error("Input should be a contiguous 1D float array");
-    scalar_type* ptr = static_cast<scalar_type*>(buf.ptr);
-    thrust::device_vector<scalar_type> device_array(ptr, ptr + buf.size);
+    thrust::device_vector<scalar_type> device_array(data, data + length);
     return thrust::reduce(thrust::device, device_array.begin(), device_array.end(), initial_value);
 }
 
@@ -316,194 +313,199 @@ void cuda_matmul_kernel(                                                        
 #pragma region Python bindings
 #if !defined(CUPY_STARTER_TEST)
 
-template <backend_t backend_kind, typename scalar_kind>
+/**
+ *  @brief  Router function, that unpacks Python buffers into C++ pointers and calls the appropriate
+ *          backend for reductions, like `openmp_reduce` or `cuda_reduce_kernel`.
+ */
+template <backend_t backend_kind, typename scalar_type>
 static py::object python_reduce_typed(py::buffer_info const& buf) noexcept(false) {
-    if (buf.ndim != 1 || buf.strides[0] != sizeof(scalar_kind))
+    if (buf.ndim != 1 || buf.strides[0] != sizeof(scalar_type))
         throw std::runtime_error("Input should be a contiguous 1D array");
-    scalar_kind* ptr = reinterpret_cast<scalar_kind*>(buf.ptr);
-    std::span<scalar_kind> data(ptr, buf.size);
+    scalar_type const* ptr = reinterpret_cast<scalar_type const*>(buf.ptr);
+    reduce_type<scalar_type> result;
 
     if constexpr (backend_kind == backend_t::openmp_k) {
-        return openmp_reduce(data);
+        // Explicitly enable dynamic teams, as the amount of compute per thread is not uniform.
+        omp_set_dynamic(1);
+        result = openmp_reduce<scalar_type>(ptr, buf.size);
     } else if constexpr (backend_kind == backend_t::cuda_k) {
 #if defined(__NVCC__)
-        return cuda_reduce(data);
+        result = cuda_reduce<scalar_type>(ptr, buf.size);
 #else
         throw std::runtime_error("CUDA backend not available");
 #endif
     } else {
         throw std::runtime_error("Unsupported backend");
     }
-}
 
-template <backend_t backend_kind> static py::object python_reduce(py::array_t a) noexcept(false) {
-    if (py::isinstance<py::array_t<float>>(a))
-        python_reduce_typed<backend_kind, float>(a.request());
-    else if (py::isinstance<py::array_t<double>>(a))
-        python_reduce_typed<backend_kind, double>(a.request());
-    else if (py::isinstance<py::array_t<std::int8_t>>(a))
-        python_reduce_typed<backend_kind, std::int8_t>(a.request());
-    else if (py::isinstance<py::array_t<std::uint8_t>>(a))
-        python_reduce_typed<backend_kind, std::uint8_t>(a.request());
-    else if (py::isinstance<py::array_t<std::int16_t>>(a))
-        python_reduce_typed<backend_kind, std::int16_t>(a.request());
-    else if (py::isinstance<py::array_t<std::uint16_t>>(a))
-        python_reduce_typed<backend_kind, std::uint16_t>(a.request());
-    else if (py::isinstance<py::array_t<std::int32_t>>(a))
-        python_reduce_typed<backend_kind, std::int32_t>(a.request());
-    else if (py::isinstance<py::array_t<std::uint32_t>>(a))
-        python_reduce_typed<backend_kind, std::uint32_t>(a.request());
-    else if (py::isinstance<py::array_t<std::int64_t>>(a))
-        python_reduce_typed<backend_kind, std::int64_t>(a.request());
-    else if (py::isinstance<py::array_t<std::uint64_t>>(a))
-        python_reduce_typed<backend_kind, std::uint64_t>(a.request());
-    else
-        throw std::runtime_error("Unsupported data type");
+    return py::cast(result);
 }
 
 /**
- *  @brief Computes the dot-product of matrices.
- *
- *  @param a The first matrix argument.
- *  @param b The second matrix argument.
- *  @param allow_gpu Whether to use the GPU for computation.
- *  @param tile_size The size of the tile to be processed.
- *  @return A NumPy array containing the dot product.
+ *  @brief  Router function, used to dispatch the right type-specific pre-compiled kernel
+ *          using runtime-only type information. Calls `python_reduce_typed`.
  */
-template <> static py::array_t python_matmul(py::array_t a, py::array_t b, bool allow_gpu, std::size_t tile_size = 0) {
+template <backend_t backend_kind> static py::object python_reduce(py::array a) noexcept(false) {
+    if (py::isinstance<py::array_t<float>>(a))
+        return python_reduce_typed<backend_kind, float>(a.request());
+    else if (py::isinstance<py::array_t<double>>(a))
+        return python_reduce_typed<backend_kind, double>(a.request());
+    else if (py::isinstance<py::array_t<std::int8_t>>(a))
+        return python_reduce_typed<backend_kind, std::int8_t>(a.request());
+    else if (py::isinstance<py::array_t<std::uint8_t>>(a))
+        return python_reduce_typed<backend_kind, std::uint8_t>(a.request());
+    else if (py::isinstance<py::array_t<std::int16_t>>(a))
+        return python_reduce_typed<backend_kind, std::int16_t>(a.request());
+    else if (py::isinstance<py::array_t<std::uint16_t>>(a))
+        return python_reduce_typed<backend_kind, std::uint16_t>(a.request());
+    else if (py::isinstance<py::array_t<std::int32_t>>(a))
+        return python_reduce_typed<backend_kind, std::int32_t>(a.request());
+    else if (py::isinstance<py::array_t<std::uint32_t>>(a))
+        return python_reduce_typed<backend_kind, std::uint32_t>(a.request());
+    else if (py::isinstance<py::array_t<std::int64_t>>(a))
+        return python_reduce_typed<backend_kind, std::int64_t>(a.request());
+    else if (py::isinstance<py::array_t<std::uint64_t>>(a))
+        return python_reduce_typed<backend_kind, std::uint64_t>(a.request());
 
-    auto buf = preferences.request();
-    if (buf.ndim != 2)
-        throw std::runtime_error("Number of dimensions must be two");
-    if (buf.shape[0] != buf.shape[1])
-        throw std::runtime_error("Preferences matrix must be square");
-    auto preferences_ptr = reinterpret_cast<votes_count_t*>(buf.ptr);
-    auto num_candidates = static_cast<cell_idx_t>(buf.shape[0]);
-    auto row_stride = static_cast<cell_idx_t>(buf.strides[0] / sizeof(votes_count_t));
+    throw std::runtime_error("Unsupported data type");
+    return py::none();
+}
+
+/**
+ *  @brief  Router function, that unpacks Python buffers into C++ pointers and calls the appropriate
+ *          backend for matrix multiplication, like `openmp_matmul` or `cuda_matmul_kernel`.
+ */
+template <backend_t backend_kind, typename scalar_type>
+static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer_info const& buffer_b,
+                                     std::size_t tile_size) {
+
+    if (buffer_a.ndim != 2 || buffer_b.ndim != 2)
+        throw std::runtime_error("Both tensors must be rank-2");
+    if (buffer_a.shape[1] != buffer_b.shape[0])
+        throw std::runtime_error("Inner dimensions must match");
+    auto ptr_a = reinterpret_cast<scalar_type const*>(buffer_a.ptr);
+    auto ptr_b = reinterpret_cast<scalar_type const*>(buffer_b.ptr);
+    auto num_rows_a = static_cast<cell_idx_t>(buffer_a.shape[0]);
+    auto num_cols_a = static_cast<cell_idx_t>(buffer_a.shape[1]);
+    auto num_cols_b = static_cast<cell_idx_t>(buffer_b.shape[1]);
+    auto stride_a = static_cast<cell_idx_t>(buffer_a.strides[0] / sizeof(scalar_type));
+    auto stride_b = static_cast<cell_idx_t>(buffer_b.strides[0] / sizeof(scalar_type));
 
     // Allocate NumPy array for the result
-    auto result = py::array_t<votes_count_t>({num_candidates, num_candidates});
-    auto result_buf = result.request();
-    auto result_ptr = reinterpret_cast<votes_count_t*>(result_buf.ptr);
-    auto result_row_stride = static_cast<cell_idx_t>(result_buf.strides[0] / sizeof(votes_count_t));
-    if (result_row_stride != num_candidates)
-        throw std::runtime_error("Result matrix must be contiguous");
+    auto tensor_c = py::array_t<scalar_type>({num_rows_a, num_cols_b});
+    auto buffer_c = tensor_c.request();
+    auto ptr_c = reinterpret_cast<scalar_type*>(buffer_c.ptr);
+    auto stride_c = static_cast<cell_idx_t>(buffer_c.strides[0] / sizeof(scalar_type));
 
-#if defined(__NVCC__)
+    // Call the appropriate kernel based on the backend
+    using kernel_t = void (*)(scalar_type const*, scalar_type const*, scalar_type*, cell_idx_t, cell_idx_t, cell_idx_t,
+                              cell_idx_t, cell_idx_t, cell_idx_t);
 
-    if (allow_gpu) {
-        votes_count_t* strongest_paths_ptr = nullptr;
-        cudaError_t error;
-        error = cudaMallocManaged(&strongest_paths_ptr, num_candidates * num_candidates * sizeof(votes_count_t));
-        if (error != cudaSuccess)
-            throw std::runtime_error("Failed to allocate memory on device");
-
-        using cuda_kernel_t = void (*)(votes_count_t*, cell_idx_t, cell_idx_t, votes_count_t*, bool);
-        cuda_kernel_t cuda_kernel = nullptr;
+    if constexpr (backend_kind == backend_t::openmp_k) {
+        // Explicitly disable dynamic teams, as the amount of compute per thread is uniform.
+        omp_set_dynamic(0);
+        omp_set_num_threads(std::thread::hardware_concurrency());
+        kernel_t kernel = nullptr;
         switch (tile_size) {
-        case 4: cuda_kernel = &matmul_cuda<4>; break;
-        case 8: cuda_kernel = &matmul_cuda<8>; break;
-        case 16: cuda_kernel = &matmul_cuda<16>; break;
-        case 32: cuda_kernel = &matmul_cuda<32>; break;
-        case 64: cuda_kernel = &matmul_cuda<64>; break;
-        case 128: cuda_kernel = &matmul_cuda<128>; break;
+        case 4: kernel = &openmp_matmul<scalar_type, 4>;
+        case 8: kernel = &openmp_matmul<scalar_type, 8>;
+        case 16: kernel = &openmp_matmul<scalar_type, 16>;
+        case 32: kernel = &openmp_matmul<scalar_type, 32>;
+        case 64: kernel = &openmp_matmul<scalar_type, 64>;
+        case 128: kernel = &openmp_matmul<scalar_type, 128>;
         default: throw std::runtime_error("Unsupported tile size");
         }
+        kernel(ptr_a, ptr_b, ptr_c, num_rows_a, num_cols_b, num_cols_a, stride_a, stride_b, stride_c);
 
-        cudaMemset(strongest_paths_ptr, 0, num_candidates * num_candidates * sizeof(votes_count_t));
-        cuda_kernel(preferences_ptr, num_candidates, row_stride, strongest_paths_ptr, allow_tma);
+    } else if constexpr (backend_kind == backend_t::cuda_k) {
+#if defined(__NVCC__)
+        votes_count_t* ptr_c_cuda = nullptr;
+        cudaError_t error;
+        error = cudaMallocManaged(&ptr_c_cuda, num_rows_a * num_cols_b * sizeof(scalar_type));
+        if (error != cudaSuccess)
+            throw std::runtime_error("Failed to allocate memory on device");
+        cudaMemset(ptr_c_cuda, 0, num_rows_a * num_cols_b * sizeof(scalar_type));
 
         // Synchronize to ensure all CUDA operations are complete
         error = cudaDeviceSynchronize();
         if (error != cudaSuccess) {
-            cudaFree(strongest_paths_ptr);
+            cudaFree(ptr_c_cuda);
+            throw std::runtime_error("CUDA operations did not complete successfully");
+        }
+
+        // Launch the CUDA kernel
+        dim3 block_size(tile_size, tile_size);
+        dim3 grid_size((num_cols_b + tile_size - 1) / tile_size, (num_rows_a + tile_size - 1) / tile_size);
+        cuda_matmul_kernel<scalar_type, tile_size><<<grid_size, block_size>>>(
+            ptr_a, ptr_b, ptr_c_cuda, num_rows_a, num_cols_b, num_cols_a, stride_a, stride_b, stride_c);
+
+        // Synchronize to ensure all CUDA operations are complete
+        error = cudaDeviceSynchronize();
+        if (error != cudaSuccess) {
+            cudaFree(ptr_c_cuda);
             throw std::runtime_error("CUDA operations did not complete successfully");
         }
 
         // Copy data from the GPU to the NumPy array
-        error = cudaMemcpy(result_ptr, strongest_paths_ptr, num_candidates * num_candidates * sizeof(votes_count_t),
+        error = cudaMemcpy(ptr_c, ptr_c_cuda, num_candidates * num_candidates * sizeof(votes_count_t),
                            cudaMemcpyDeviceToHost);
         if (error != cudaSuccess) {
-            cudaFree(strongest_paths_ptr);
+            cudaFree(ptr_c_cuda);
             throw std::runtime_error("Failed to copy data from device to host");
         }
 
         // Synchronize to ensure all CUDA transfers are complete
         error = cudaDeviceSynchronize();
         if (error != cudaSuccess) {
-            cudaFree(strongest_paths_ptr);
+            cudaFree(ptr_c_cuda);
             throw std::runtime_error("CUDA transfers did not complete successfully");
         }
 
         // Free the GPU memory
-        error = cudaFree(strongest_paths_ptr);
+        error = cudaFree(ptr_c_cuda);
         if (error != cudaSuccess)
             throw std::runtime_error("Failed to free memory on device");
-        return result;
-    }
-#endif // defined(__NVCC__)
-
-    omp_set_dynamic(0); // ? Explicitly disable dynamic teams
-    omp_set_num_threads(std::thread::hardware_concurrency());
-
-    // Probe for the largest possible tile size, if not previously specified
-    using kernel_t = void (*)(votes_count_t*, cell_idx_t, cell_idx_t, votes_count_t*);
-    struct {
-        std::size_t tile_size;
-        kernel_t aligned_kernel;
-        kernel_t unaligned_kernel;
-    } tiled_kernels[] = {
-        {4, matmul_openmp<4, false>, matmul_openmp<4, true>},
-        {8, matmul_openmp<8, false>, matmul_openmp<8, true>},
-        {16, matmul_openmp<16, false>, matmul_openmp<16, true>},
-        {32, matmul_openmp<32, false>, matmul_openmp<32, true>},
-        {64, matmul_openmp<64, false>, matmul_openmp<64, true>},
-        {128, matmul_openmp<128, false>, matmul_openmp<128, true>},
-    };
-    kernel_t aligned_kernel = nullptr;
-    kernel_t unaligned_kernel = nullptr;
-    if (tile_size == 0) {
-        for (auto const& kernel : tiled_kernels) {
-            if (num_candidates >= kernel.tile_size) {
-                tile_size = kernel.tile_size;
-                aligned_kernel = kernel.aligned_kernel;
-                unaligned_kernel = kernel.unaligned_kernel;
-                break;
-            }
-        }
-        if (tile_size == 0)
-            throw std::runtime_error("Number of candidates should be at least 4, ideally divisible by 4");
+#else
+        throw std::runtime_error("CUDA backend not available");
+#endif
     } else {
-        if (tile_size > num_candidates)
-            throw std::runtime_error("Tile size should be less than or equal to the number of candidates");
-        for (auto const& kernel : tiled_kernels) {
-            if (tile_size == kernel.tile_size) {
-                aligned_kernel = kernel.aligned_kernel;
-                unaligned_kernel = kernel.unaligned_kernel;
-                break;
-            }
-        }
-        if (aligned_kernel == nullptr)
-            throw std::runtime_error("Unsupported tile size");
+        throw std::runtime_error("Unsupported backend");
     }
 
-    // Check if we can use the aligned kernel
-    bool is_aligned = num_candidates % tile_size == 0;
-    if (is_aligned)
-        aligned_kernel(preferences_ptr, num_candidates, row_stride, result_ptr);
-    else
-        unaligned_kernel(preferences_ptr, num_candidates, row_stride, result_ptr);
-    return result;
+    return tensor_c;
 }
 
 /**
- *  @brief Accumulates the elements of a NumPy array.
- *
- *  @param array The NumPy array containing elements to accumulate.
- *  @param allow_gpu Whether to use the GPU for computation.
- *  @return A scalar containing the sum - a float or an integer.
+ *  @brief  Router function, used to dispatch the right type-specific pre-compiled kernel
+ *          using runtime-only type information. Calls `python_matmul_typed`.
  */
-static py::object python_reduce(py::array_t array, bool allow_gpu) {}
+template <backend_t backend_kind>
+static py::array python_matmul(py::array a, py::array b, std::size_t tile_size) noexcept(false) {
+
+    if (py::isinstance<py::array_t<float>>(a))
+        return python_matmul_typed<backend_kind, float>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<double>>(a))
+        return python_matmul_typed<backend_kind, double>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::int8_t>>(a))
+        return python_matmul_typed<backend_kind, std::int8_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::uint8_t>>(a))
+        return python_matmul_typed<backend_kind, std::uint8_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::int16_t>>(a))
+        return python_matmul_typed<backend_kind, std::int16_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::uint16_t>>(a))
+        return python_matmul_typed<backend_kind, std::uint16_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::int32_t>>(a))
+        return python_matmul_typed<backend_kind, std::int32_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::uint32_t>>(a))
+        return python_matmul_typed<backend_kind, std::uint32_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::int64_t>>(a))
+        return python_matmul_typed<backend_kind, std::int64_t>(a.request(), b.request(), tile_size);
+    else if (py::isinstance<py::array_t<std::uint64_t>>(a))
+        return python_matmul_typed<backend_kind, std::uint64_t>(a.request(), b.request(), tile_size);
+
+    throw std::runtime_error("Unsupported data type");
+    return py::none();
+}
 
 PYBIND11_MODULE(cupy_starter, m) {
 
@@ -534,12 +536,12 @@ PYBIND11_MODULE(cupy_starter, m) {
 
     // This is how we could have used `thrust::` for higher-level operations
     m.def("reduce_openmp", &python_reduce<backend_t::openmp_k>);
-    m.def("matmul_openmp", &matmul<backend_t::openmp_k>, py::arg("a"), py::arg("b"), py::kw_only(),
-          py::arg("tile_size") = 0);
+    m.def("matmul_openmp", &python_matmul<backend_t::openmp_k>, py::arg("a"), py::arg("b"), py::kw_only(),
+          py::arg("tile_size") = 16);
 
     m.def("reduce_cuda", &python_reduce<backend_t::cuda_k>);
-    m.def("matmul_cuda", &matmul<backend_t::cuda_k>, py::arg("a"), py::arg("b"), py::kw_only(),
-          py::arg("tile_size") = 0);
+    m.def("matmul_cuda", &python_matmul<backend_t::cuda_k>, py::arg("a"), py::arg("b"), py::kw_only(),
+          py::arg("tile_size") = 16);
 }
 
 #endif // !defined(CUPY_STARTER_TEST)
