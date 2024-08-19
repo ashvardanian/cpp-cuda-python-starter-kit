@@ -4,7 +4,7 @@ I like to design parallel algorithms in Python before porting them to C++ and CU
 It's a simple way to prototype and test ideas quickly, but configuring the build tools for such heterogenous code + heterogeneous hardware projects is a pain, often amplified by the ugly syntax of CMake.
 This project provides a pre-configured environment for such workflows...:
 
-1. using only `setup.py` and `requirements.txt` to manage the build process,
+1. using only `setup.py` and `requirements-{cpu,gpu}.txt` to manage the build process,
 2. supporting OpenMP for parallelism on the CPU, and CUDA for GPU, and
 3. including [CCCL](https://github.com/NVIDIA/cccl) libraries, like Thrust, and CUB, to simplify the code.
 
@@ -46,15 +46,16 @@ The project is designed to be as simple as possible, with the following workflow
 
 Beginner:
 
-- High-level concepts. [nvidia.com](https://developer.nvidia.com/blog/even-easier-introduction-cuda/)
-- CUDA in Python with Numba. [numba/nvidia-cuda-tutorial](https://github.com/numba/nvidia-cuda-tutorial)
-- C++ STL Parallelism on GPUs. [nvidia.com](https://developer.nvidia.com/blog/accelerating-standard-c-with-gpus-using-stdpar/)
+- High-level concepts: [nvidia.com](https://developer.nvidia.com/blog/even-easier-introduction-cuda/)
+- CUDA in Python with Numba: [numba/nvidia-cuda-tutorial](https://github.com/numba/nvidia-cuda-tutorial)
+- C++ STL Parallelism on GPUs: [nvidia.com](https://developer.nvidia.com/blog/accelerating-standard-c-with-gpus-using-stdpar/)
 
 Advanced:
 
-- CUDA math intrinsics. [nvidia.com](https://docs.nvidia.com/cuda/cuda-math-api/index.html)
-- Troubleshooting Nvidia hardware. [stas00/ml-engineering](https://github.com/stas00/ml-engineering/blob/master/compute/accelerator/nvidia/debug.md)
-- Nvidia ISA Generator with SM89 and SM90 codes. [kuterd/nv_isa_solver](https://github.com/kuterd/nv_isa_solver)
+- CUDA math intrinsics: [nvidia.com](https://docs.nvidia.com/cuda/cuda-math-api/index.html)
+- Troubleshooting Nvidia hardware: [stas00/ml-engineering](https://github.com/stas00/ml-engineering/blob/master/compute/accelerator/nvidia/debug.md)
+- Nvidia ISA Generator with SM89 and SM90 codes: [kuterd/nv_isa_solver](https://github.com/kuterd/nv_isa_solver)
+- Multi GPU examples: [nvidia/multi-gpu-programming-models](https://github.com/NVIDIA/multi-gpu-programming-models)
 
 Communities:
 
