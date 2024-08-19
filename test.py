@@ -2,12 +2,12 @@ import pytest
 import numpy as np
 from cupy_starter_baseline import matmul as baseline_matmul, reduce as baseline_reduce
 
-# Import the compiled module from the C++/CUDA code
-import cupy_starter
+from cupy_starter import supports_cuda, reduce_openmp, reduce_cuda, matmul_openmp, matmul_cuda
 
+backends = ["openmp", "cuda"] if supports_cuda() else ["openmp"]
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64, np.uint64])
-@pytest.mark.parametrize("backend", ["openmp", "cuda"])
+@pytest.mark.parametrize("backend", backends)
 def test_reduce(dtype, backend):
     # Generate random data
     data = (np.random.rand(1024) * 100).astype(dtype)
@@ -17,9 +17,9 @@ def test_reduce(dtype, backend):
 
     # Get the result from the C++/CUDA implementation
     if backend == "openmp":
-        result = cupy_starter.reduce_openmp(data)
+        result = reduce_openmp(data)
     elif backend == "cuda":
-        result = cupy_starter.reduce_cuda(data)
+        result = reduce_cuda(data)
 
     # Compare the results
     np.testing.assert_allclose(result, expected_result, rtol=1e-2)
@@ -27,7 +27,7 @@ def test_reduce(dtype, backend):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64, np.uint64])
 @pytest.mark.parametrize("tile_size", [4, 8, 16, 32, 64])
-@pytest.mark.parametrize("backend", ["openmp", "cuda"])
+@pytest.mark.parametrize("backend", backends)
 def test_matmul(dtype, tile_size, backend):
     # Generate random matrices
     a = (np.random.rand(256, 256) * 100).astype(dtype)
@@ -38,9 +38,9 @@ def test_matmul(dtype, tile_size, backend):
 
     # Get the result from the C++/CUDA implementation
     if backend == "openmp":
-        result = cupy_starter.matmul_openmp(a, b, tile_size=tile_size)
+        result = matmul_openmp(a, b, tile_size=tile_size)
     elif backend == "cuda":
-        result = cupy_starter.matmul_cuda(a, b, tile_size=tile_size)
+        result = matmul_cuda(a, b, tile_size=tile_size)
 
     # Compare the results
     np.testing.assert_allclose(result, expected_result, rtol=1e-2)

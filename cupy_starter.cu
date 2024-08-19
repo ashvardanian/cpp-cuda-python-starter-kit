@@ -581,8 +581,15 @@ PYBIND11_MODULE(cupy_starter, m) {
 
     std::signal(SIGINT, signal_handler);
 
-    // Let's show how to wrap `void` functions for basic logging
-    m.def("log_gpus", []() {
+    m.def("supports_cuda", []() -> bool {
+#if defined(__NVCC__)
+        return true;
+#else
+        return false;
+#endif
+    });
+
+    m.def("log_cuda_devices", []() {
 #if defined(__NVCC__)
         int device_count;
         cudaDeviceProp device_props;
