@@ -26,7 +26,7 @@ def test_reduce(dtype, backend):
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64, np.uint64])
-@pytest.mark.parametrize("tile_size", [16, 32, 64])
+@pytest.mark.parametrize("tile_size", [4, 8, 16, 32, 64])
 @pytest.mark.parametrize("backend", ["openmp", "cuda"])
 def test_matmul(dtype, tile_size, backend):
     # Generate random matrices

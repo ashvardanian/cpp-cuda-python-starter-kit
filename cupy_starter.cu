@@ -9,9 +9,9 @@
 #include <cstdint>   // `std::uint32_t`
 #include <cstdio>    // `std::printf`
 #include <cstdlib>   // `std::rand`
+#include <cstring>   // `std::memset`
 #include <stdexcept> // `std::runtime_error`
 #include <thread>    // `std::thread::hardware_concurrency()`
-#include <vector>    // `std::vector`
 
 /*
  *  Include the SIMD intrinsics for the target architecture.
@@ -23,27 +23,6 @@
 #endif
 #if defined(__AVX2__) || defined(__AVX512F__)
 #include <immintrin.h>
-#endif
-
-#if defined(__NVCC__)
-#include <cuda.h> // `CUtensorMap`
-#include <cuda/barrier>
-#include <cudaTypedefs.h> // `PFN_cuTensorMapEncodeTiled`
-#include <cuda_runtime.h>
-#include <thrust/device_vector.h>
-#include <thrust/execution_policy.h>
-#endif
-
-/*
- *  If we are only testing the raw kernels, we don't need to link to PyBind.
- *  That accelerates the build process and simplifies the configs.
- */
-#if !defined(CUPY_STARTER_TEST)
-#include <pybind11/numpy.h> // `array_t`
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-
-namespace py = pybind11;
 #endif
 
 /*  It's a good idea to specialize kernels for different architectures of GPUs.
@@ -66,6 +45,29 @@ namespace py = pybind11;
 #endif
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
 #define CUPY_STARTER_HOPPER 1
+#endif
+
+#if defined(__NVCC__)
+#include <cuda.h>         // `CUtensorMap`
+#include <cudaTypedefs.h> // `PFN_cuTensorMapEncodeTiled`
+#include <cuda_runtime.h>
+#include <thrust/device_vector.h>
+#include <thrust/execution_policy.h>
+#if defined(CUPY_STARTER_VOLTA)
+#include <cuda/barrier>
+#endif
+#endif
+
+/*
+ *  If we are only testing the raw kernels, we don't need to link to PyBind.
+ *  That accelerates the build process and simplifies the configs.
+ */
+#if !defined(CUPY_STARTER_TEST)
+#include <pybind11/numpy.h> // `array_t`
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+namespace py = pybind11;
 #endif
 
 using cell_idx_t = std::uint32_t;
@@ -185,7 +187,8 @@ void openmp_matmul(                                                             
                 for (cell_idx_t ii = 0; ii < tile_size; ++ii)
                     for (cell_idx_t jj = 0; jj < tile_size; ++jj)
                         for (cell_idx_t kk = 0; kk < tile_size; ++kk)
-                            local_tile_c[ii][jj] += local_tile_a[ii][kk] * local_tile_b[kk][jj];
+                            local_tile_c[ii][jj] +=
+                                static_cast<matmul_type<scalar_type>>(local_tile_a[ii][kk]) * local_tile_b[kk][jj];
             }
 
             // Write the result back to the output matrix
@@ -202,9 +205,6 @@ void openmp_matmul(                                                             
 #pragma region CUDA
 
 #if defined(__NVCC__)
-
-namespace cde = cuda::device::experimental;
-using barrier_t = cuda::barrier<cuda::thread_scope_block>;
 
 /**
  *  @brief Performs a reduction operation on a 1D array using CUDA.
@@ -262,14 +262,14 @@ reduce_type<scalar_type> cuda_reduce(scalar_type const* data, std::size_t length
  *  supports strided matrices, where elements of a row are not necessarily contiguous in memory.
  */
 template <typename scalar_type, cell_idx_t tile_size = 16>                                        //
-__device__ void cuda_matmul_kernel(                                                               //
+__global__ void cuda_matmul_kernel(                                                               //
     scalar_type const* matrix_a, scalar_type const* matrix_b, matmul_type<scalar_type>* matrix_c, //
     cell_idx_t num_rows_a, cell_idx_t num_cols_b, cell_idx_t num_cols_a,                          //
-    cell_idx_t stride_a, cell_idx_t stride_b, cell_idx_t stride_c) noexcept {
+    cell_idx_t stride_a, cell_idx_t stride_b, cell_idx_t stride_c) {
 
     // Allocate shared memory for matrix_a and matrix_b tiles
-    __shared__ matmul_type<scalar_type> tile_a[tile_size][tile_size];
-    __shared__ matmul_type<scalar_type> tile_b[tile_size][tile_size];
+    __shared__ scalar_type tile_a[tile_size][tile_size];
+    __shared__ scalar_type tile_b[tile_size][tile_size];
 
     // Calculate the row and column index for this thread in the output matrix matrix_c
     cell_idx_t row = blockIdx.y * tile_size + threadIdx.y;
@@ -280,16 +280,16 @@ __device__ void cuda_matmul_kernel(                                             
 
     // Loop over tiles of matrix_a and matrix_b that are multiplied together
     for (cell_idx_t t = 0; t < (num_cols_a + tile_size - 1) / tile_size; ++t) {
-        // Load tiles of matrix_a and matrix_b into shared memory with boundary checks
-        if (row < num_rows_a && t * tile_size + threadIdx.x < num_cols_a)
-            tile_a[threadIdx.y][threadIdx.x] = matrix_a[row * stride_a + t * tile_size + threadIdx.x];
-        else
-            tile_a[threadIdx.y][threadIdx.x] = 0;
 
-        if (col < num_cols_b && t * tile_size + threadIdx.y < num_cols_a)
-            tile_b[threadIdx.y][threadIdx.x] = matrix_b[(t * tile_size + threadIdx.y) * stride_b + col];
-        else
-            tile_b[threadIdx.y][threadIdx.x] = 0.0f;
+        // Load tiles of matrix_a and matrix_b into shared memory with boundary checks
+        tile_a[threadIdx.y][threadIdx.x] = //
+            (row < num_rows_a && t * tile_size + threadIdx.x < num_cols_a)
+                ? matrix_a[row * stride_a + t * tile_size + threadIdx.x]
+                : 0;
+        tile_b[threadIdx.y][threadIdx.x] = //
+            (col < num_cols_b && t * tile_size + threadIdx.y < num_cols_a)
+                ? matrix_b[(t * tile_size + threadIdx.y) * stride_b + col]
+                : 0;
 
         // Synchronize to ensure all data is loaded into shared memory
         __syncthreads();
@@ -297,7 +297,7 @@ __device__ void cuda_matmul_kernel(                                             
 #pragma unroll
         // Perform the multiplication and accumulate
         for (cell_idx_t k = 0; k < tile_size; ++k) {
-            cell_c += tile_a[threadIdx.y][k] * tile_b[k][threadIdx.x];
+            cell_c += static_cast<matmul_type<scalar_type>>(tile_a[threadIdx.y][k]) * tile_b[k][threadIdx.x];
         }
 
         // Synchronize to ensure all threads are done with the current tile
@@ -412,23 +412,75 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
         case 16: kernel = &openmp_matmul<scalar_type, 16>; break;
         case 32: kernel = &openmp_matmul<scalar_type, 32>; break;
         case 64: kernel = &openmp_matmul<scalar_type, 64>; break;
-        case 128: kernel = &openmp_matmul<scalar_type, 128>; break;
-        default: throw std::runtime_error("Unsupported tile size");
+        default: throw std::runtime_error("Unsupported tile size - choose from 4, 8, 16, 32, and 64");
         }
         kernel(ptr_a, ptr_b, ptr_c, num_rows_a, num_cols_b, num_cols_a, stride_a, stride_b, stride_c);
 
     } else if constexpr (backend_kind == backend_t::cuda_k) {
 #if defined(__NVCC__)
+
+        // Now allocate enough managed memory for all 3 matrices, and asyncronously copy them to the GPU,
+        // using the 2D `memcpy2DAsync` function, which is more efficient than `memcpy` for large matrices.
+        //
+        // https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html
+        // Allocate pitched memory for matrices A and B to ensure proper row alignment
+        size_t pitch_a, pitch_b;
+        scalar_type *ptr_a_cuda = nullptr, *ptr_b_cuda = nullptr;
         matmul_type<scalar_type>* ptr_c_cuda = nullptr;
         cudaError_t error;
-        error = cudaMallocManaged(&ptr_c_cuda, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>));
-        if (error != cudaSuccess)
-            throw std::runtime_error("Failed to allocate memory on device");
-        cudaMemset(ptr_c_cuda, 0, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>));
 
-        // Synchronize to ensure all CUDA operations are complete
+        // Allocate pitched memory for matrices A and B to ensure proper row alignment
+        error = cudaMallocPitch(&ptr_a_cuda, &pitch_a, num_cols_a * sizeof(scalar_type), num_rows_a);
+        if (error != cudaSuccess)
+            throw std::runtime_error("Failed to allocate pitched memory for matrix A");
+
+        error = cudaMallocPitch(&ptr_b_cuda, &pitch_b, num_cols_b * sizeof(scalar_type), num_cols_a);
+        if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            throw std::runtime_error("Failed to allocate pitched memory for matrix B");
+        }
+
+        // Allocate memory for matrix C (no pitch needed)
+        error = cudaMalloc(&ptr_c_cuda, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>));
+        if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
+            throw std::runtime_error("Failed to allocate memory for matrix C");
+        }
+
+        // Copy matrices A and B from host to device using pitched memory
+        error = cudaMemcpy2D(ptr_a_cuda, pitch_a, buffer_a.ptr, buffer_a.strides[0], num_cols_a * sizeof(scalar_type),
+                             num_rows_a, cudaMemcpyHostToDevice);
+        if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
+            cudaFree(ptr_c_cuda);
+            throw std::runtime_error("Failed to copy matrix A to device");
+        }
+
+        error = cudaMemcpy2D(ptr_b_cuda, pitch_b, buffer_b.ptr, buffer_b.strides[0], num_cols_b * sizeof(scalar_type),
+                             num_cols_a, cudaMemcpyHostToDevice);
+        if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
+            cudaFree(ptr_c_cuda);
+            throw std::runtime_error("Failed to copy matrix B to device");
+        }
+
+        // Initialize the result matrix C (zero it out)
+        error = cudaMemset(ptr_c_cuda, 0, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>));
+        if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
+            cudaFree(ptr_c_cuda);
+            throw std::runtime_error("Failed to zero out matrix C");
+        }
+
+        // Synchronize to ensure all CUDA operations (including memory copies) are complete
         error = cudaDeviceSynchronize();
         if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
             cudaFree(ptr_c_cuda);
             throw std::runtime_error("CUDA operations did not complete successfully");
         }
@@ -444,15 +496,26 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
         case 16: kernel = &cuda_matmul_kernel<scalar_type, 16>; break;
         case 32: kernel = &cuda_matmul_kernel<scalar_type, 32>; break;
         case 64: kernel = &cuda_matmul_kernel<scalar_type, 64>; break;
-        case 128: kernel = &cuda_matmul_kernel<scalar_type, 128>; break;
-        default: throw std::runtime_error("Unsupported tile size");
+        default: throw std::runtime_error("Unsupported tile size - choose from 4, 8, 16, 32, and 64");
         }
-        kernel<<<grid_size, block_size>>>(ptr_a, ptr_b, ptr_c_cuda, num_rows_a, num_cols_b, num_cols_a, stride_a,
-                                          stride_b, stride_c);
 
-        // Synchronize to ensure all CUDA operations are complete
+        kernel<<<grid_size, block_size>>>(ptr_a_cuda, ptr_b_cuda, ptr_c_cuda, num_rows_a, num_cols_b, num_cols_a,
+                                          pitch_a / sizeof(scalar_type), pitch_b / sizeof(scalar_type), num_cols_b);
+
+        // Check for errors during kernel launch
+        error = cudaGetLastError();
+        if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
+            cudaFree(ptr_c_cuda);
+            throw std::runtime_error(cudaGetErrorString(error));
+        }
+
+        // Synchronize to ensure kernel execution is complete
         error = cudaDeviceSynchronize();
         if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
             cudaFree(ptr_c_cuda);
             throw std::runtime_error("CUDA operations did not complete successfully");
         }
@@ -461,21 +524,17 @@ static py::array python_matmul_typed(py::buffer_info const& buffer_a, py::buffer
         error = cudaMemcpy(ptr_c, ptr_c_cuda, num_rows_a * num_cols_b * sizeof(matmul_type<scalar_type>),
                            cudaMemcpyDeviceToHost);
         if (error != cudaSuccess) {
+            cudaFree(ptr_a_cuda);
+            cudaFree(ptr_b_cuda);
             cudaFree(ptr_c_cuda);
             throw std::runtime_error("Failed to copy data from device to host");
         }
 
-        // Synchronize to ensure all CUDA transfers are complete
-        error = cudaDeviceSynchronize();
-        if (error != cudaSuccess) {
-            cudaFree(ptr_c_cuda);
-            throw std::runtime_error("CUDA transfers did not complete successfully");
-        }
-
         // Free the GPU memory
-        error = cudaFree(ptr_c_cuda);
-        if (error != cudaSuccess)
-            throw std::runtime_error("Failed to free memory on device");
+        cudaFree(ptr_a_cuda);
+        cudaFree(ptr_b_cuda);
+        cudaFree(ptr_c_cuda);
+
 #else
         throw std::runtime_error("CUDA backend not available");
 #endif
@@ -560,15 +619,59 @@ PYBIND11_MODULE(cupy_starter, m) {
 
 #if defined(CUPY_STARTER_TEST)
 
+#include <algorithm> // `std::generate`
+#include <numeric>   // `std::accumulate`
+#include <vector>    // `std::vector`
+
 int main() {
 
-    std::size_t num_candidates = 256;
-    std::vector<votes_count_t> preferences(num_candidates * num_candidates);
-    std::generate(preferences.begin(), preferences.end(),
-                  [=]() { return static_cast<votes_count_t>(std::rand() % num_candidates); });
+    // As a test, let's generate some random floats and reduce them.
+    constexpr std::size_t num_elements = 1 << 20;
+    std::vector<float> data(num_elements);
+    std::generate(data.begin(), data.end(), []() { return static_cast<float>(std::rand() % 100); });
 
-    std::vector<votes_count_t> graph(num_candidates * num_candidates);
-    matmul_openmp<64>(preferences.data(), num_candidates, num_candidates, graph.data());
+    // Let's test the OpenMP reduction
+    double result = openmp_reduce(data.data(), num_elements);
+    std::printf("OpenMP reduction result: %.2f\n", result);
+    reduce_type<float> expected = std::accumulate(data.begin(), data.end(), 0.0);
+    if (std::abs(result - expected) > 1e-6)
+        throw std::runtime_error("OpenMP reduction failed");
+
+#if defined(__NVCC__)
+    // Let's test the CUDA reduction
+    reduce_type<float> result_cuda = cuda_reduce(data.data(), num_elements);
+    std::printf("CUDA reduction result: %.2f\n", result_cuda);
+    if (std::abs(result_cuda - expected) > 1e-2)
+        throw std::runtime_error("CUDA reduction failed");
+#endif
+
+    // Let's test the OpenMP matrix multiplication against CUDA
+    constexpr cell_idx_t num_rows = 256;
+    constexpr cell_idx_t num_cols = 256;
+    std::vector<float> matrix_a(num_rows * num_cols);
+    std::vector<float> matrix_b(num_rows * num_cols);
+    std::generate(matrix_a.begin(), matrix_a.end(), []() { return static_cast<float>(std::rand() % 100); });
+    std::generate(matrix_b.begin(), matrix_b.end(), []() { return static_cast<float>(std::rand() % 100); });
+    std::vector<matmul_type<float>> matrix_c(num_rows * num_cols);
+    openmp_matmul(matrix_a.data(), matrix_b.data(), matrix_c.data(), num_rows, num_cols, num_cols, num_cols, num_cols,
+                  num_cols);
+
+#if defined(__NVCC__)
+    constexpr cell_idx_t tile_size = 16;
+    dim3 block_size(tile_size, tile_size);
+    dim3 grid_size((num_rows + tile_size - 1) / tile_size, (num_cols + tile_size - 1) / tile_size);
+
+    std::vector<matmul_type<float>> matrix_c_cuda(num_rows * num_cols);
+    cuda_matmul_kernel<float, tile_size><<<grid_size, block_size>>>(matrix_a.data(), matrix_b.data(),
+                                                                    matrix_c_cuda.data(), num_rows, num_cols, num_cols,
+                                                                    num_cols, num_cols, num_cols);
+    matmul_type<float> max_diff = 0;
+    for (std::size_t i = 0; i < num_rows * num_cols; i++)
+        max_diff = std::max<matmul_type<float>>(max_diff, std::abs(matrix_c[i] - matrix_c_cuda[i]));
+    std::printf("Max difference between OpenMP and CUDA matmul: %.2f\n", max_diff);
+    if (max_diff > 1e-2)
+        throw std::runtime_error("Matmul kernels do not match");
+#endif
 
     return 0;
 }

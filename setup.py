@@ -125,7 +125,7 @@ class BuildExt(build_ext):
 
         cmd = (
             f"nvcc -c {source} -o {output_file} -std=c++17 "
-            f"-gencode=arch=compute_{arch_code},code=compute_{arch_code} "
+            f"-gencode=arch=compute_{arch_code},code=sm_{arch_code} "
             f"-Xcompiler -fPIC {include_dirs} -O3 -g"
         )
         if os.system(cmd) != 0:
