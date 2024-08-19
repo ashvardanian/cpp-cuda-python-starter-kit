@@ -5,3 +5,4 @@ cupy-cuda12x
 pycuda
 pytest
 pytest-repeat
+perfplot

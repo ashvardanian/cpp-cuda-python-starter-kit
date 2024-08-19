@@ -3,3 +3,4 @@ numpy
 numba
 pytest
 pytest-repeat
+perfplot

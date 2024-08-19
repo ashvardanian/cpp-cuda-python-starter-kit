@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
-from cupy_starter_baseline import matmul as baseline_matmul, reduce as baseline_reduce
 
+from cupy_starter_baseline import matmul as matmul_baseline, reduce as reduce_baseline
 from cupy_starter import supports_cuda, reduce_openmp, reduce_cuda, matmul_openmp, matmul_cuda
 
 backends = ["openmp", "cuda"] if supports_cuda() else ["openmp"]
@@ -13,7 +13,7 @@ def test_reduce(dtype, backend):
     data = (np.random.rand(1024) * 100).astype(dtype)
 
     # Get the expected result from the baseline implementation
-    expected_result = baseline_reduce(data)
+    expected_result = reduce_baseline(data)
 
     # Get the result from the C++/CUDA implementation
     if backend == "openmp":
@@ -34,7 +34,7 @@ def test_matmul(dtype, tile_size, backend):
     b = (np.random.rand(256, 256) * 100).astype(dtype)
 
     # Get the expected result from the baseline implementation
-    expected_result = baseline_matmul(a, b)
+    expected_result = matmul_baseline(a, b)
 
     # Get the result from the C++/CUDA implementation
     if backend == "openmp":

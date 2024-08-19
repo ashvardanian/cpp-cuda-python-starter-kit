@@ -9,6 +9,7 @@
 *.a
 *.dylib
 *.o
+*.png
 __pycache__
 build_debug
 build_release
