@@ -1,9 +1,19 @@
 import numpy as np
+import warnings
 from numba import njit
 
 
-@njit
-def matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def safe_njit(f):
+    try:
+        return njit(f)
+    except Exception as e:
+        warnings.warn(f"Numba JIT compilation failed for function {f.__name__}: {e}")
+        return f
+
+
+@safe_njit
+def matmul_numba(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Equivalent to np.matmul(a, b)"""
     m, n = a.shape
     n, k = b.shape
     c = np.zeros((m, k), dtype=a.dtype)
@@ -14,9 +24,18 @@ def matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return c
 
 
-@njit
-def reduce(a: np.ndarray) -> float:
+@safe_njit
+def reduce_numba(a: np.ndarray) -> float:
+    """Equivalent to np.sum(a)"""
     s = 0.0
     for i in range(a.shape[0]):
         s += a[i]
     return s
+
+
+def matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    return np.matmul(a, b)
+
+
+def reduce(a: np.ndarray) -> float:
+    return np.sum(a)

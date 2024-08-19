@@ -52,6 +52,32 @@
                 "$gcc"
             ],
             "detail": "Compiles the code using GCC"
+        },
+        {
+            "label": "Compile with AppleClang",
+            "type": "shell",
+            "command": "clang++",
+            "args": [
+                "-o",
+                "${workspaceFolder}/build_debug/cupy_starter",
+                "-x",
+                "c++",
+                "${workspaceFolder}/cupy_starter.cu",
+                "-fsanitize=address",
+                "-fsanitize=undefined",
+                "-g",
+                "-O0",
+                "--std=c++17",
+                "-DCUPY_STARTER_TEST"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Compiles the code using AppleClang"
         }
     ]
 }

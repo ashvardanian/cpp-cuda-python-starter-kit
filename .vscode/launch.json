@@ -86,6 +86,37 @@
             },
             "visualizerFile": "${workspaceFolder}/.vscode/gdb/visualizers/custom.visualizer",
             "showDisplayString": true
+        },
+        {
+            "name": "Debug AppleClang Build",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build_debug/cupy_starter",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "ASAN_OPTIONS",
+                    "value": "detect_leaks=0"
+                },
+                {
+                    "name": "LSAN_OPTIONS",
+                    "value": "verbosity=1:log_threads=1"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "setupCommands": [],
+            "preLaunchTask": "Compile with AppleClang",
+            "logging": {
+                "moduleLoad": false,
+                "programOutput": true,
+                "trace": false,
+                "traceResponse": false
+            },
+            "visualizerFile": "${workspaceFolder}/.vscode/gdb/visualizers/custom.visualizer",
+            "showDisplayString": true
         }
     ]
 }
