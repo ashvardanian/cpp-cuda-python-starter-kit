@@ -45,6 +45,7 @@ The project is designed to be as simple as possible, with the following workflow
 Beginner:
 
 - High-level concepts: [nvidia.com](https://developer.nvidia.com/blog/even-easier-introduction-cuda/)
+- Nvidia CuPy UDFs: [cupy.dev](https://docs.cupy.dev/en/stable/user_guide/kernel.html)
 - CUDA in Python with Numba: [numba/nvidia-cuda-tutorial](https://github.com/numba/nvidia-cuda-tutorial)
 - C++ STL Parallelism on GPUs: [nvidia.com](https://developer.nvidia.com/blog/accelerating-standard-c-with-gpus-using-stdpar/)
 
@@ -60,3 +61,4 @@ Communities:
 - CUDA MODE on [Discord](https://discord.com/invite/cudamode)
 - r/CUDA on [Reddit](https://www.reddit.com/r/CUDA/)
 - NVIDIA Developer Forums on [DevTalk](https://forums.developer.nvidia.com)
+
