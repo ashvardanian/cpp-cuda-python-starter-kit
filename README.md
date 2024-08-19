@@ -1,6 +1,6 @@
-# CUDA + Python Starter Kit
+![CUDA Python Starter Kit Thumbnail](https://github.com/ashvardanian/ashvardanian/blob/master/repositories/cuda-python-starter-kit.jpg?raw=true)
 
-I like to design parallel algorithms in Python before porting them to C++ and CUDA.
+One of the most common workflows in high-performance computing is to prototype algorithms in Python and then port them to C++ and CUDA.
 It's a simple way to prototype and test ideas quickly, but configuring the build tools for such heterogenous code + heterogeneous hardware projects is a pain, often amplified by the ugly syntax of CMake.
 This project provides a pre-configured environment for such workflows...:
 
@@ -9,7 +9,7 @@ This project provides a pre-configured environment for such workflows...:
 3. including [CCCL](https://github.com/NVIDIA/cccl) libraries, like Thrust, and CUB, to simplify the code.
 
 As an example, the repository implements, tests, and benchmarks only 2 operations - array accumulation and matrix multiplication.
-The baseline Python + Numba implementations are placed into the `cupy_starter_baseline.py` file, and the optimized CUDA nd OpenMP implementations are placed into the `cupy_starter.cu` file.
+The baseline Python + Numba implementations are placed in `cupy_starter_baseline.py`, and the optimized CUDA nd OpenMP implementations are placed in `cupy_starter.cu`.
 If no CUDA-capable device is found, the file will be treated as a CPU-only C++ implementation.
 If VSCode is used, the `tasks.json` file is configured with debuggers for both CPU and GPU code, both in Python and C++.
 
@@ -29,10 +29,8 @@ git submodule update --init --recursive     # fetch CCCL libraries
 pip install -r requirements-gpu.txt         # or requirements-cpu.txt
 pip install -e .                            # compile for the current platform
 pytest test.py -s -x                        # test until first failure
-python benchmark.py --num-candidates 128 --num-voters 128 --run-openmp --run-numba --run-serial --run-cuda
+python benchmark.py                         # saves charts to disk
 ```
-
-This includes 
 
 ## Workflow
 
