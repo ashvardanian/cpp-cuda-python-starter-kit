@@ -2,8 +2,8 @@
 
 ![CUDA Python Starter Kit Thumbnail](https://github.com/ashvardanian/ashvardanian/blob/master/repositories/cuda-python-starter-kit.jpg?raw=true)
 
-One of the most common workflows in high-performance computing is to prototype algorithms in Python and then port them to C++ and CUDA.
-It's a simple way to prototype and test ideas quickly, but configuring the build tools for such heterogenous code + heterogeneous hardware projects is a pain, often amplified by the ugly syntax of CMake.
+One of the most common workflows in high-performance computing is to 1️⃣ prototype algorithms in Python and then 2️⃣ port them to C++ and CUDA.
+It's a simple way to prototype and test ideas quickly, but configuring the build tools for such heterogenous code + heterogeneous hardware projects is a pain, often amplified by the error-prone syntax of CMake.
 This project provides a pre-configured environment for such workflows...:
 
 1. using only `setup.py` and `requirements-{cpu,gpu}.txt` to manage the build process,
@@ -11,9 +11,10 @@ This project provides a pre-configured environment for such workflows...:
 3. including [CCCL](https://github.com/NVIDIA/cccl) libraries, like Thrust, and CUB, to simplify the code.
 
 As an example, the repository implements, tests, and benchmarks only 2 operations - array accumulation and matrix multiplication.
-The baseline Python + Numba implementations are placed in `cupy_starter_baseline.py`, and the optimized CUDA nd OpenMP implementations are placed in `cupy_starter.cu`.
+The baseline Python + Numba implementations are placed in `starter_kit_baseline.py`, and the optimized CUDA nd OpenMP implementations are placed in `starter_kit.cu`.
 If no CUDA-capable device is found, the file will be treated as a CPU-only C++ implementation.
 If VSCode is used, the `tasks.json` file is configured with debuggers for both CPU and GPU code, both in Python and C++.
+The `.clang-format` is configured with LLVM base style, adjusted for wider screens, allowing 120 characters per line.
 
 ## Installation
 
@@ -31,7 +32,7 @@ git submodule update --init --recursive     # fetch CCCL libraries
 pip install -r requirements-gpu.txt         # or requirements-cpu.txt
 pip install -e .                            # compile for the current platform
 pytest test.py -s -x                        # test until first failure
-python benchmark.py                         # saves charts to disk
+python bench.py                             # saves charts to disk
 ```
 
 ## Workflow
@@ -39,8 +40,8 @@ python benchmark.py                         # saves charts to disk
 The project is designed to be as simple as possible, with the following workflow:
 
 1. Fork or download the repository.
-2. Implement your baseline algorithm in `cupy_starter_baseline.py`.
-3. Implement your optimized algorithm in `cupy_starter.cu`.
+2. Implement your baseline algorithm in `starter_kit_baseline.py`.
+3. Implement your optimized algorithm in `starter_kit.cu`.
 
 ## Reading Materials
 

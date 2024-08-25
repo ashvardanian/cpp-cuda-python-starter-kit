@@ -1,8 +1,8 @@
 import pytest
 import numpy as np
 
-from cupy_starter_baseline import matmul as matmul_baseline, reduce as reduce_baseline
-from cupy_starter import supports_cuda, reduce_openmp, reduce_cuda, matmul_openmp, matmul_cuda
+from starter_kit_baseline import matmul as matmul_baseline, reduce as reduce_baseline
+from starter_kit import supports_cuda, reduce_openmp, reduce_cuda, matmul_openmp, matmul_cuda
 
 backends = ["openmp", "cuda"] if supports_cuda() else ["openmp"]
 

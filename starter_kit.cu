@@ -2,7 +2,7 @@
  *   @brief  Starter Kit project for CUDA- and OpenMP-accelerated Python libraries.
  *   @author Ash Vardanian
  *   @date   August 10, 2024
- *   @file   cupy_starter.cu
+ *   @file   starter_kit.cu
  *   @see    https://github.com/ashvardanian/cuda-python-starter-kit
  */
 #include <csignal>   // `std::signal`
@@ -32,19 +32,19 @@
  *  - Hopper (9.0) introduced FP8. and integer SIMD instructions.
  */
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 300
-#define CUPY_STARTER_KEPLER 1
+#define STARTER_KIT_KEPLER 1
 #endif
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
-#define CUPY_STARTER_PASCAL 1
+#define STARTER_KIT_PASCAL 1
 #endif
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-#define CUPY_STARTER_VOLTA 1
+#define STARTER_KIT_VOLTA 1
 #endif
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 890
-#define CUPY_STARTER_AMPERE 1
+#define STARTER_KIT_AMPERE 1
 #endif
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
-#define CUPY_STARTER_HOPPER 1
+#define STARTER_KIT_HOPPER 1
 #endif
 
 #if defined(__NVCC__)
@@ -53,7 +53,7 @@
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
-#if defined(CUPY_STARTER_VOLTA)
+#if defined(STARTER_KIT_VOLTA)
 #include <cuda/barrier>
 #endif
 #endif
@@ -62,7 +62,7 @@
  *  If we are only testing the raw kernels, we don't need to link to PyBind.
  *  That accelerates the build process and simplifies the configs.
  */
-#if !defined(CUPY_STARTER_TEST)
+#if !defined(STARTER_KIT_TEST)
 #include <pybind11/numpy.h> // `array_t`
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -314,7 +314,7 @@ __global__ void cuda_matmul_kernel(                                             
 #pragma endregion CUDA
 
 #pragma region Python bindings
-#if !defined(CUPY_STARTER_TEST)
+#if !defined(STARTER_KIT_TEST)
 
 /**
  *  @brief  Router function, that unpacks Python buffers into C++ pointers and calls the appropriate
@@ -577,7 +577,7 @@ static py::array python_matmul(py::array a, py::array b, std::size_t tile_size) 
     return py::none();
 }
 
-PYBIND11_MODULE(cupy_starter, m) {
+PYBIND11_MODULE(starter_kit, m) {
 
     std::signal(SIGINT, signal_handler);
 
@@ -621,10 +621,10 @@ PYBIND11_MODULE(cupy_starter, m) {
           py::arg("tile_size") = 16);
 }
 
-#endif // !defined(CUPY_STARTER_TEST)
+#endif // !defined(STARTER_KIT_TEST)
 #pragma endregion Python bindings
 
-#if defined(CUPY_STARTER_TEST)
+#if defined(STARTER_KIT_TEST)
 
 #include <algorithm> // `std::generate`
 #include <numeric>   // `std::accumulate`
@@ -683,4 +683,4 @@ int main() {
     return 0;
 }
 
-#endif // defined(CUPY_STARTER_TEST)
+#endif // defined(STARTER_KIT_TEST)

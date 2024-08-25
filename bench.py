@@ -1,8 +1,8 @@
 import numpy as np
 import perfplot
 
-from cupy_starter_baseline import matmul as matmul_baseline, reduce as reduce_baseline
-from cupy_starter import (
+from starter_kit_baseline import matmul as matmul_baseline, reduce as reduce_baseline
+from starter_kit import (
     reduce_openmp,
     reduce_cuda,
     matmul_openmp,

@@ -51,7 +51,7 @@ class BuildExt(build_ext):
 
         # Link all object files
         self.compiler.link_shared_object(
-            objects + [os.path.join(self.build_temp, "cupy_starter.o")],
+            objects + [os.path.join(self.build_temp, "starter_kit.o")],
             self.get_ext_fullpath(ext.name),
             libraries=ext.libraries,
             library_dirs=ext.library_dirs,
@@ -109,7 +109,7 @@ class BuildExt(build_ext):
         os.makedirs(output_dir, exist_ok=True)
         include_dirs = self.compiler.include_dirs + ext.include_dirs
         include_dirs = " ".join(f"-I{dir}" for dir in include_dirs)
-        output_file = os.path.join(output_dir, "cupy_starter.o")
+        output_file = os.path.join(output_dir, "starter_kit.o")
 
         # Let's try inferring the compute capability from the GPU
         arch_code = "90"
@@ -145,8 +145,8 @@ python_lib_name = os.path.basename(python_lib_dir).replace(".so", "")
 
 ext_modules = [
     Extension(
-        "cupy_starter",
-        ["cupy_starter.cu"],
+        "starter_kit",
+        ["starter_kit.cu"],
         include_dirs=[
             pybind11.get_include(),
             np.get_include(),
@@ -175,7 +175,7 @@ ext_modules = [
 ]
 
 setup(
-    name="cupy_starter",
+    name="starter_kit",
     version=__version__,
     author="Ash Vardanian",
     author_email="1983160+ashvardanian@users.noreply.github.com",

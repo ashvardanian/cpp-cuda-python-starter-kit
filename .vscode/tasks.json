@@ -8,14 +8,14 @@
             "args": [
                 "-gencode=arch=compute_70,code=compute_70",
                 "-o",
-                "${workspaceFolder}/build_debug/cupy_starter",
-                "${workspaceFolder}/cupy_starter.cu",
+                "${workspaceFolder}/build_debug/starter_kit",
+                "${workspaceFolder}/starter_kit.cu",
                 "-Xcompiler",
                 "-fopenmp",
                 "-g",
                 "-O0",
                 "--std=c++17",
-                "-DCUPY_STARTER_TEST"
+                "-DSTARTER_KIT_TEST"
             ],
             "group": {
                 "kind": "build",
@@ -32,17 +32,17 @@
             "command": "g++",
             "args": [
                 "-o",
-                "${workspaceFolder}/build_debug/cupy_starter",
+                "${workspaceFolder}/build_debug/starter_kit",
                 "-x",
                 "c++",
-                "${workspaceFolder}/cupy_starter.cu",
+                "${workspaceFolder}/starter_kit.cu",
                 "-fopenmp",
                 "-fsanitize=address",
                 "-fsanitize=undefined",
                 "-g",
                 "-O0",
                 "--std=c++17",
-                "-DCUPY_STARTER_TEST"
+                "-DSTARTER_KIT_TEST"
             ],
             "group": {
                 "kind": "build",
@@ -59,16 +59,16 @@
             "command": "clang++",
             "args": [
                 "-o",
-                "${workspaceFolder}/build_debug/cupy_starter",
+                "${workspaceFolder}/build_debug/starter_kit",
                 "-x",
                 "c++",
-                "${workspaceFolder}/cupy_starter.cu",
+                "${workspaceFolder}/starter_kit.cu",
                 "-fsanitize=address",
                 "-fsanitize=undefined",
                 "-g",
                 "-O0",
                 "--std=c++17",
-                "-DCUPY_STARTER_TEST"
+                "-DSTARTER_KIT_TEST"
             ],
             "group": {
                 "kind": "build",
