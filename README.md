@@ -1,3 +1,5 @@
+# C++ & CUDA Starter Kit for Python Developers
+
 ![CUDA Python Starter Kit Thumbnail](https://github.com/ashvardanian/ashvardanian/blob/master/repositories/cuda-python-starter-kit.jpg?raw=true)
 
 One of the most common workflows in high-performance computing is to prototype algorithms in Python and then port them to C++ and CUDA.
@@ -18,8 +20,8 @@ If VSCode is used, the `tasks.json` file is configured with debuggers for both C
 I'd recommend forking the repository for your own projects, but you can also clone it directly:
 
 ```bash
-git clone https://github.com/ashvardanian/cuda-python-starter-kit.git
-cd cuda-python-starter-kit
+git clone https://github.com/ashvardanian/cpp-cuda-python-starter-kit.git
+cd cpp-cuda-python-starter-kit
 ```
 
 Once pulled down, you can build the project with:
@@ -42,14 +44,14 @@ The project is designed to be as simple as possible, with the following workflow
 
 ## Reading Materials
 
-Beginner:
+Beginner GPGPU:
 
 - High-level concepts: [nvidia.com](https://developer.nvidia.com/blog/even-easier-introduction-cuda/)
 - Nvidia CuPy UDFs: [cupy.dev](https://docs.cupy.dev/en/stable/user_guide/kernel.html)
 - CUDA in Python with Numba: [numba/nvidia-cuda-tutorial](https://github.com/numba/nvidia-cuda-tutorial)
 - C++ STL Parallelism on GPUs: [nvidia.com](https://developer.nvidia.com/blog/accelerating-standard-c-with-gpus-using-stdpar/)
 
-Advanced:
+Advanced GPGPU:
 
 - CUDA math intrinsics: [nvidia.com](https://docs.nvidia.com/cuda/cuda-math-api/index.html)
 - Troubleshooting Nvidia hardware: [stas00/ml-engineering](https://github.com/stas00/ml-engineering/blob/master/compute/accelerator/nvidia/debug.md)
